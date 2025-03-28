@@ -1,0 +1,9 @@
+CompileFlags:
+    CompilationDatabase: build
+    Add: ["-D__STRICT_ANSI__", "-Wall"]
+
+Diagnostics:
+    Suppress: ["type_unsupported"]
+    # ClangTidy: See file `.clang-tidy`
+    UnusedIncludes: Strict
+    # MissingIncludes: Strict  # Too many false positive
