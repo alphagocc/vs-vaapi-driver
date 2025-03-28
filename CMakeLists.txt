@@ -9,16 +9,12 @@ aux_source_directory(src SRC)
 
 add_library(vs-vaapi SHARED ${SRC})
 
-add_executable(vdec_demo vdec-demo.cpp)
+#add_executable(vdec_demo vdec-demo.cpp)
 
 include_directories(libcsi_hal/include/csi_hal_vcodec)
 
-include_directories(3rdparty/verisilicon/include)
-include_directories(3rdparty/verisilicon/include/common)
-include_directories(3rdparty/verisilicon/include/config)
-
-target_link_directories(vdec_demo PRIVATE libcsi_hal/lib)
+#target_link_directories(vdec_demo PRIVATE libcsi_hal/lib)
 target_link_directories(vs-vaapi PRIVATE libcsi_hal/lib)
 
 target_link_libraries(vs-vaapi PRIVATE hal_vdec vmem)
-target_link_libraries(vdec_demo PRIVATE hal_vdec)
+#target_link_libraries(vdec_demo PRIVATE hal_vdec)
