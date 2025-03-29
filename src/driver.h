@@ -6,11 +6,14 @@
 #ifndef FAKE_DRIVER_H_
 #define FAKE_DRIVER_H_
 
+#include <cstdint>
+#include <memory>
 #include <va/va.h>
 
 #include "buffer.h"
 #include "config.h"
 #include "context.h"
+#include "h264_decoder_delegate.h"
 #include "image.h"
 #include "object_tracker.h"
 #include "scoped_bo_mapping_factory.h"
@@ -18,7 +21,6 @@
 
 namespace libvavc8000d
 {
-
 // VSDriver is used to keep track of all the state that exists between a call
 // to vaInitialize() and a call to vaTerminate(). All public methods are
 // thread-safe.
@@ -45,11 +47,11 @@ public:
     const VSSurface &GetSurface(VSSurface::IdType id);
     void DestroySurface(VSSurface::IdType id);
 
-    FakeContext::IdType CreateContext(VAConfigID config_id, int picture_width, int picture_height,
+    VSContext::IdType CreateContext(VAConfigID config_id, int picture_width, int picture_height,
         int flag, std::vector<VASurfaceID> render_targets);
-    bool ContextExists(FakeContext::IdType id);
-    const FakeContext &GetContext(FakeContext::IdType id);
-    void DestroyContext(FakeContext::IdType id);
+    bool ContextExists(VSContext::IdType id);
+    const VSContext &GetContext(VSContext::IdType id);
+    void DestroyContext(VSContext::IdType id);
 
     VSBuffer::IdType CreateBuffer(VAContextID context, VABufferType type,
         unsigned int size_per_element, unsigned int num_elements, const void *data);
@@ -70,7 +72,7 @@ private:
     ScopedBOMappingFactory scoped_bo_mapping_factory_;
     ObjectTracker<VSConfig> config_;
     ObjectTracker<VSSurface> surface_;
-    ObjectTracker<FakeContext> context_;
+    ObjectTracker<VSContext> context_;
     ObjectTracker<VSBuffer> buffers_;
 
     // The VSImage instances in |images_| reference VSBuffer instances in

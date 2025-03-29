@@ -16,6 +16,7 @@
 // built for Fake GBM will simply be DLL injected (using LD_PRELOAD generally)
 // into the test process.
 
+#include <iostream>
 #ifdef UNSAFE_BUFFERS_BUILD
 // We need to conform to the GBM API, which unfortunately involves a lot of
 // unsafe buffer access to maintain C99 compatibility.
@@ -30,7 +31,6 @@
 #include <sys/mman.h>
 #include <unistd.h>
 
-
 #include "base/logging.h"
 
 #define PAGE_SIZE 4096
@@ -39,7 +39,7 @@
 
 #define DRM_NODE_RENDER 2
 
-#define GBM_EXPORT __attribute__((visibility("default")))
+#define GBM_EXPORT
 
 #define GBM_FORMAT_P010 __gbm_fourcc_code('P', '0', '1', '0')
 
@@ -51,7 +51,7 @@ struct gbm_device
 
 // This is technically not GBM, it's DRM, but it's necessary for some GBM and
 // libva clients to be happy with our fake drivers.
-extern "C" GBM_EXPORT int drmGetNodeTypeFromFd(int fd) { return DRM_NODE_RENDER; }
+GBM_EXPORT int drmGetNodeTypeFromFd(int fd) { return DRM_NODE_RENDER; }
 
 struct gbm_bo
 {
@@ -91,11 +91,15 @@ uint32_t get_plane_min_size(struct gbm_bo *bo, size_t plane)
         / get_y_subsample(bo, plane);
 }
 
-extern "C" GBM_EXPORT struct gbm_device *gbm_create_device(int fd) { return new struct gbm_device; }
+GBM_EXPORT struct gbm_device *gbm_create_device(int fd)
+{
+    std::cerr << "gbm_create_device(" << fd << ")" << std::endl;
+    return new struct gbm_device;
+}
 
-extern "C" GBM_EXPORT void gbm_device_destroy(struct gbm_device *gbm) { delete gbm; }
+GBM_EXPORT void gbm_device_destroy(struct gbm_device *gbm) { delete gbm; }
 
-extern "C" GBM_EXPORT uint32_t gbm_bo_get_bpp(struct gbm_bo *bo)
+GBM_EXPORT uint32_t gbm_bo_get_bpp(struct gbm_bo *bo)
 {
     CHECK(bo);
 
@@ -107,7 +111,7 @@ extern "C" GBM_EXPORT uint32_t gbm_bo_get_bpp(struct gbm_bo *bo)
     }
 }
 
-extern "C" GBM_EXPORT int gbm_bo_get_plane_count(struct gbm_bo *bo)
+GBM_EXPORT int gbm_bo_get_plane_count(struct gbm_bo *bo)
 {
     CHECK(bo);
 
@@ -119,7 +123,7 @@ extern "C" GBM_EXPORT int gbm_bo_get_plane_count(struct gbm_bo *bo)
     }
 }
 
-extern "C" GBM_EXPORT struct gbm_bo *gbm_bo_create(
+GBM_EXPORT struct gbm_bo *gbm_bo_create(
     struct gbm_device *gbm, uint32_t width, uint32_t height, uint32_t format, uint32_t flags)
 {
     CHECK(format == GBM_FORMAT_NV12 || format == GBM_FORMAT_P010 || format == GBM_FORMAT_YUV420);
@@ -149,13 +153,13 @@ extern "C" GBM_EXPORT struct gbm_bo *gbm_bo_create(
     return bo;
 }
 
-extern "C" GBM_EXPORT void gbm_bo_destroy(struct gbm_bo *bo)
+GBM_EXPORT void gbm_bo_destroy(struct gbm_bo *bo)
 {
     CHECK(bo);
     delete bo;
 }
 
-extern "C" GBM_EXPORT void *gbm_bo_map2(struct gbm_bo *bo, uint32_t x, uint32_t y, uint32_t width,
+GBM_EXPORT void *gbm_bo_map2(struct gbm_bo *bo, uint32_t x, uint32_t y, uint32_t width,
     uint32_t height, uint32_t transfer_flags, uint32_t *stride, void **map_data, int plane)
 {
     CHECK(bo);
@@ -182,7 +186,7 @@ extern "C" GBM_EXPORT void *gbm_bo_map2(struct gbm_bo *bo, uint32_t x, uint32_t 
     return reinterpret_cast<void *>(reinterpret_cast<uint8_t *>(addr) + offset);
 }
 
-extern "C" GBM_EXPORT void gbm_bo_unmap(struct gbm_bo *bo, void *map_data)
+GBM_EXPORT void gbm_bo_unmap(struct gbm_bo *bo, void *map_data)
 {
     CHECK(bo);
 
@@ -193,7 +197,7 @@ extern "C" GBM_EXPORT void gbm_bo_unmap(struct gbm_bo *bo, void *map_data)
     delete _map_data;
 }
 
-extern "C" GBM_EXPORT struct gbm_bo *gbm_bo_import(
+GBM_EXPORT struct gbm_bo *gbm_bo_import(
     struct gbm_device *gbm, uint32_t type, void *buffer, uint32_t usage)
 {
     CHECK(buffer);
@@ -205,14 +209,14 @@ extern "C" GBM_EXPORT struct gbm_bo *gbm_bo_import(
     return bo;
 }
 
-extern "C" GBM_EXPORT int gbm_bo_get_fd(struct gbm_bo *bo)
+GBM_EXPORT int gbm_bo_get_fd(struct gbm_bo *bo)
 {
     CHECK(bo);
 
     return dup(bo->meta.fds[0]);
 }
 
-extern "C" GBM_EXPORT int gbm_bo_get_fd_for_plane(struct gbm_bo *bo, int plane)
+GBM_EXPORT int gbm_bo_get_fd_for_plane(struct gbm_bo *bo, int plane)
 {
     CHECK(bo);
     CHECK(plane >= 0);
@@ -221,16 +225,16 @@ extern "C" GBM_EXPORT int gbm_bo_get_fd_for_plane(struct gbm_bo *bo, int plane)
     return gbm_bo_get_fd(bo);
 }
 
-extern "C" GBM_EXPORT uint64_t gbm_bo_get_modifier(struct gbm_bo *bo) { return 0; }
+GBM_EXPORT uint64_t gbm_bo_get_modifier(struct gbm_bo *bo) { return 0; }
 
-extern "C" GBM_EXPORT uint32_t gbm_bo_get_format(struct gbm_bo *bo)
+GBM_EXPORT uint32_t gbm_bo_get_format(struct gbm_bo *bo)
 {
     CHECK(bo);
 
     return bo->meta.format;
 }
 
-extern "C" GBM_EXPORT uint32_t gbm_bo_get_offset(struct gbm_bo *bo, int plane)
+GBM_EXPORT uint32_t gbm_bo_get_offset(struct gbm_bo *bo, int plane)
 {
     CHECK(bo);
     CHECK(static_cast<int>(plane) < gbm_bo_get_plane_count(bo));
@@ -238,7 +242,7 @@ extern "C" GBM_EXPORT uint32_t gbm_bo_get_offset(struct gbm_bo *bo, int plane)
     return bo->meta.offsets[plane];
 }
 
-extern "C" GBM_EXPORT uint32_t gbm_bo_get_stride_for_plane(struct gbm_bo *bo, int plane)
+GBM_EXPORT uint32_t gbm_bo_get_stride_for_plane(struct gbm_bo *bo, int plane)
 {
     CHECK(bo);
     CHECK(static_cast<int>(plane) < gbm_bo_get_plane_count(bo));
@@ -246,14 +250,14 @@ extern "C" GBM_EXPORT uint32_t gbm_bo_get_stride_for_plane(struct gbm_bo *bo, in
     return bo->meta.strides[plane];
 }
 
-extern "C" GBM_EXPORT uint32_t gbm_bo_get_width(struct gbm_bo *bo)
+GBM_EXPORT uint32_t gbm_bo_get_width(struct gbm_bo *bo)
 {
     CHECK(bo);
 
     return bo->meta.width;
 }
 
-extern "C" GBM_EXPORT uint32_t gbm_bo_get_height(struct gbm_bo *bo)
+GBM_EXPORT uint32_t gbm_bo_get_height(struct gbm_bo *bo)
 {
     CHECK(bo);
 

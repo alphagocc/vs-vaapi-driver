@@ -145,7 +145,7 @@ ScopedBOMapping::ScopedAccess ScopedBOMapping::BeginAccess() const
 
 ScopedBOMappingFactory::ScopedBOMappingFactory(int drm_fd) : gbm_device_(gbm_create_device(drm_fd))
 {
-    CHECK_GE(drm_fd, 0);
+    // CHECK_GE(drm_fd, 0);
     CHECK(gbm_device_);
 }
 

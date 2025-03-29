@@ -4,6 +4,8 @@
 // found in the LICENSE file.
 
 #include "driver.h"
+#include "dwl.h"
+#include "h264_decoder_delegate.h"
 
 namespace libvavc8000d
 {
@@ -37,18 +39,18 @@ const VSSurface &VSDriver::GetSurface(VSSurface::IdType id) { return surface_.Ge
 
 void VSDriver::DestroySurface(VSSurface::IdType id) { surface_.DestroyObject(id); }
 
-FakeContext::IdType VSDriver::CreateContext(VAConfigID config_id, int picture_width,
+VSContext::IdType VSDriver::CreateContext(VAConfigID config_id, int picture_width,
     int picture_height, int flag, std::vector<VASurfaceID> render_targets)
 {
     return context_.CreateObject(
         GetConfig(config_id), picture_width, picture_height, flag, std::move(render_targets));
 }
 
-bool VSDriver::ContextExists(FakeContext::IdType id) { return context_.ObjectExists(id); }
+bool VSDriver::ContextExists(VSContext::IdType id) { return context_.ObjectExists(id); }
 
-const FakeContext &VSDriver::GetContext(FakeContext::IdType id) { return context_.GetObject(id); }
+const VSContext &VSDriver::GetContext(VSContext::IdType id) { return context_.GetObject(id); }
 
-void VSDriver::DestroyContext(FakeContext::IdType id) { context_.DestroyObject(id); }
+void VSDriver::DestroyContext(VSContext::IdType id) { context_.DestroyObject(id); }
 
 VSBuffer::IdType VSDriver::CreateBuffer(VAContextID context, VABufferType type,
     unsigned int size_per_element, unsigned int num_elements, const void *data)

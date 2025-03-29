@@ -6,15 +6,23 @@
 #ifndef H264_DECODER_DELEGATE_H_
 #define H264_DECODER_DELEGATE_H_
 
+#include <cstdint>
+#include <memory>
 #include <va/va.h>
 
 #include "base/lru_cache.h"
 #include "context_delegate.h"
+#include "h264decapi.h"
 #include <hal/csi_vdec.h>
 
 namespace libvavc8000d
 {
-
+struct DWLInstance
+{
+    const void *instance;
+    DWLInstance(uint32_t client_type);
+    ~DWLInstance();
+};
 // Class used for H264 software decoding.
 class H264DecoderDelegate : public ContextDelegate
 {
@@ -31,9 +39,8 @@ public:
     void Run() override;
 
 private:
-    void OnFrameReady(unsigned char *pData[3], SBufferInfo *pDstInfo);
+    void OnFrameReady(H264DecPicture picture);
 
-    csi_vdec_dev_t csi_decoder_;
     const VAProfile profile_;
 
     std::vector<const VSBuffer *> slice_data_buffers_;
@@ -42,6 +49,9 @@ private:
     const VSSurface *render_target_{ nullptr };
     const VSBuffer *pic_param_buffer_{ nullptr };
     const VSBuffer *matrix_buffer_{ nullptr };
+
+    std::unique_ptr<DWLInstance> dwl_instance_;
+    H264DecInst hw_decoder_;
 
     uint32_t current_ts_ = 0;
     base::LRUCache<uint32_t, const VSSurface *> ts_to_render_target_;

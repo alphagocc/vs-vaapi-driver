@@ -15,7 +15,7 @@ class VSBuffer;
 class VSSurface;
 
 // A ContextDelegate implements the details of a specific task (e.g., software
-// decoding). A FakeContext can delegate work to a ContextDelegate through a
+// decoding). A VSContext can delegate work to a ContextDelegate through a
 // task-agnostic API.
 //
 // Users of a ContextDelegate instance must not assume any of its methods are

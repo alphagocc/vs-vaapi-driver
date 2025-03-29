@@ -43,6 +43,18 @@ std::unique_ptr<VSSurface> VSSurface::Create(IdType id, unsigned int format, uns
     ScopedBOMappingFactory &scoped_bo_mapping_factory)
 {
     // There are no specified attributes to this surface
+
+    // Dump the attributes for debugging.
+    // for (auto &attrib : attrib_list) {
+    //     std::cerr << "attrib.type: " << attrib.type << std::endl;
+    //     std::cerr << "attrib.value.type: " << attrib.value.type << std::endl;
+    //     if (attrib.value.type == VAGenericValueTypeInteger) {
+    //         std::cerr << "attrib.value.value.i: " << attrib.value.value.i << std::endl;
+    //     } else if (attrib.value.type == VAGenericValueTypePointer) {
+    //         std::cerr << "attrib.value.value.p: " << attrib.value.value.p << std::endl;
+    //     }
+    // }
+
     if (attrib_list.empty()) {
         return base::WrapUnique(
             new VSSurface(id, format, /*va_fourcc=*/0u, width, height, std::move(attrib_list),
@@ -60,6 +72,10 @@ std::unique_ptr<VSSurface> VSSurface::Create(IdType id, unsigned int format, uns
 
         if (attrib.type == VASurfaceAttribMemoryType) {
             CHECK_EQ(attrib.value.type, VAGenericValueTypeInteger);
+            if (attrib.value.value.i == VA_SURFACE_ATTRIB_MEM_TYPE_VA) {
+                return base::WrapUnique(new VSSurface(id, format, /*va_fourcc=*/0u, width, height,
+                    std::move(attrib_list), /*mapped_bo=*/{}));
+            }
             CHECK_EQ(attrib.value.value.i, VA_SURFACE_ATTRIB_MEM_TYPE_DRM_PRIME_2);
         } else if (attrib.type == VASurfaceAttribExternalBufferDescriptor) {
             CHECK_EQ(attrib.value.type, VAGenericValueTypePointer);

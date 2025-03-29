@@ -7,10 +7,20 @@
 
 #include "base/byte_conversions.h"
 #include "base/logging.h"
+#include "basetype.h"
 #include "buffer.h"
-#include "hal/csi_frame.h"
-#include "hal/csi_vdec.h"
+#include "decapicommon.h"
+#include "dectypes.h"
+#include "dwl.h"
+#include "h264decapi.h"
 #include "surface.h"
+#include <cstdio>
+#include <cstring>
+#include <fstream>
+#include <iostream>
+#include <unistd.h>
+
+const int BUFFER_ALIGN_MASK = 0xF;
 
 namespace libvavc8000d
 {
@@ -456,15 +466,37 @@ namespace
 // Size of the timestamp cache, needs to be large enough for frame-reordering.
 constexpr size_t kTimestampCacheSize = 128;
 
+DWLInstance::DWLInstance(u32 client_type)
+{
+    DWLInitParam param;
+    param.client_type = client_type;
+    instance = nullptr;
+    instance = DWLInit(&param);
+}
+
+DWLInstance::~DWLInstance() { DWLRelease(instance); }
+
 H264DecoderDelegate::H264DecoderDelegate(
     int picture_width_hint, int picture_height_hint, VAProfile profile)
     : profile_(profile), ts_to_render_target_(kTimestampCacheSize)
 {
-
-    CHECK_EQ(csi_vdec_open(&csi_decoder_, nullptr), 0);
+    dwl_instance_ = std::make_unique<DWLInstance>(DWL_CLIENT_TYPE_H264_DEC);
+    H264DecConfig dec_config;
+    memset(&dec_config, 0, sizeof(dec_config));
+    dec_config.dpb_flags = DEC_REF_FRM_RASTER_SCAN;
+    dec_config.decoder_mode = DEC_NORMAL;
+    dec_config.error_handling = DEC_EC_FAST_FREEZE;
+    dec_config.no_output_reordering = 1;
+    dec_config.use_display_smoothing = 0;
+    dec_config.use_video_compressor = 0;
+    dec_config.use_adaptive_buffers = 1;
+    dec_config.guard_size = 0;
+    auto ret = H264DecInit(
+        const_cast<const void **>(&hw_decoder_), dwl_instance_->instance, &dec_config);
+    std::cerr << "HW Decoder Initialized. Return code: " << ret << std::endl;
 }
 
-H264DecoderDelegate::~H264DecoderDelegate() { csi_vdec_close(csi_decoder_); }
+H264DecoderDelegate::~H264DecoderDelegate() { H264DecRelease(hw_decoder_); }
 
 void H264DecoderDelegate::SetRenderTarget(const VSSurface &surface)
 {
@@ -498,6 +530,17 @@ void H264DecoderDelegate::Run()
     BuildPackedH264SPS(pic_param_buffer, profile_, bitstream_builder);
     BuildPackedH264PPS(pic_param_buffer, slice_param_buffers_, profile_, bitstream_builder);
 
+    {
+        std::ofstream bitstream_file("bitstream0.h264", std::ios::binary | std::ios::trunc);
+        if (bitstream_file.is_open()) {
+            bitstream_file.write(reinterpret_cast<const char *>(bitstream_builder.data()),
+                bitstream_builder.BytesInBuffer());
+            bitstream_file.close();
+        } else {
+            std::cerr << "Unable to open bitstream file for writing." << std::endl;
+        }
+    }
+
     for (const auto &slice_data_buffer : slice_data_buffers_) {
         // Add the H264 start code for each slice.
         bitstream_builder.AppendBits(32, 0x00000001);
@@ -509,15 +552,96 @@ void H264DecoderDelegate::Run()
 
     bitstream_builder.Flush();
 
-    // TODO: Actual Decode
+    // Dump bitstream to file for debugging.
+    {
+        std::ofstream bitstream_file("bitstream.h264", std::ios::binary | std::ios::trunc);
+        if (bitstream_file.is_open()) {
+            bitstream_file.write(reinterpret_cast<const char *>(bitstream_builder.data()),
+                bitstream_builder.BytesInBuffer());
+            bitstream_file.close();
+        } else {
+            std::cerr << "Unable to open bitstream file for writing." << std::endl;
+        }
+    }
 
+    // Invoke HW Decoder
+    H264DecInput input;
+    input.skip_non_reference = 0;
+
+    DWLLinearMem stream_mem;
+    memset(&stream_mem, 0, sizeof(stream_mem));
+    stream_mem.mem_type = DWL_MEM_TYPE_CPU;
+    DWLMallocLinear(dwl_instance_->instance, bitstream_builder.BytesInBuffer() * 2, &stream_mem);
+    input.stream = reinterpret_cast<uint8_t *>(stream_mem.virtual_address);
+    input.stream_bus_address = stream_mem.bus_address;
+    input.data_len = bitstream_builder.BytesInBuffer();
+    memcpy(stream_mem.virtual_address, bitstream_builder.data(), bitstream_builder.BytesInBuffer());
+
+    input.buffer
+        = reinterpret_cast<u8 *>(reinterpret_cast<addr_t>(input.stream) & ~BUFFER_ALIGN_MASK);
+    input.buffer_bus_address = input.stream_bus_address & ~BUFFER_ALIGN_MASK;
+    input.buff_len = input.data_len + (input.stream_bus_address & BUFFER_ALIGN_MASK);
+    input.pic_id = current_ts_++;
+
+    input.p_user_data = stream_mem.virtual_address;
+
+    H264DecOutput output;
+    memset(&output, 0, sizeof(output));
+    std::cerr << "HW Decoder Started" << std::endl;
+    bool ok = 0, fail = 0;
+    do {
+        auto ret = H264DecDecode(hw_decoder_, &input, &output);
+        std::cerr << "HW Decoder Return: " << ret << std::endl;
+        switch (ret) {
+        case DEC_STREAM_NOT_SUPPORTED: {
+            fail = true;
+            break;
+        }
+        case DEC_HDRS_RDY: break;
+        case DEC_PENDING_FLUSH:
+        case DEC_PIC_DECODED: {
+            H264DecPicture picture;
+            for (;;) {
+                auto ret = H264DecNextPicture(hw_decoder_, &picture, 0);
+                if (ret == DEC_PIC_RDY) {
+                    OnFrameReady(picture);
+                    H264DecPictureConsumed(hw_decoder_, &picture);
+                } else
+                    break;
+            }
+            break;
+        }
+        case DEC_STRM_PROCESSED: {
+            // All data has been processed, we can stop the loop.
+            ok = true;
+            break;
+        }
+        case DEC_OK:
+            /* nothing to do, just call again */
+            break;
+        default: {
+            std::cerr << "HW Decoder Error: " << ret << std::endl;
+            fail = true;
+            break;
+        }
+        }
+        // update input stream
+        input.stream = output.strm_curr_pos;
+        input.data_len = output.data_left;
+        input.stream_bus_address = output.strm_curr_bus_address;
+
+    } while (!ok && !fail);
+
+    std::cerr << "HW Decoder Stopped" << std::endl;
+
+    DWLFreeLinear(dwl_instance_->instance, &stream_mem);
     slice_data_buffers_.clear();
     slice_param_buffers_.clear();
 }
 
-void H264DecoderDelegate::OnFrameReady(unsigned char *pData[3], SBufferInfo *pDstInfo)
+void H264DecoderDelegate::OnFrameReady(H264DecPicture picture)
 {
-    // const uint32_t ts = pDstInfo->uiOutYuvTimeStamp;
+    const uint32_t ts = picture.pic_id;
     auto render_target_it = ts_to_render_target_.Peek(ts);
     CHECK(render_target_it != ts_to_render_target_.end());
     const VSSurface *render_target = render_target_it->second;
@@ -526,8 +650,13 @@ void H264DecoderDelegate::OnFrameReady(unsigned char *pData[3], SBufferInfo *pDs
     const ScopedBOMapping &bo_mapping = render_target->GetMappedBO();
     CHECK(bo_mapping.IsValid());
     const ScopedBOMapping::ScopedAccess mapped_bo = bo_mapping.BeginAccess();
-    csi_frame_s s;
-    // TODO: put to mapped_bo
+    for (int i = 0; i < DEC_MAX_OUT_COUNT; i++) {
+        if (picture.pictures[i].pic_width == 0 || picture.pictures[i].pic_height == 0) continue;
+        std::cerr << "Picture " << i << ": width=" << picture.pictures[i].pic_width
+                  << ", height=" << picture.pictures[i].pic_height << std::endl;
+        // TODO: Copy the data from the picture to the render target.
+    }
+    //;
 }
 
 } // namespace libvavc8000d

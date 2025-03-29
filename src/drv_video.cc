@@ -12,6 +12,7 @@
 #include <va/va_backend.h>
 #include <va/va_drmcommon.h>
 
+#include <fstream>
 #include <set>
 
 #include "base/logging.h"
@@ -619,12 +620,16 @@ VAStatus vsQuerySurfaceAttributes(
     // |attribs| may have a single VASurfaceAttribPixelFormat set for querying
     // support for a given pixel format. Chrome doesn't support it, so we verify
     // all input types are zero (VASurfaceAttribNone).
-    for (size_t i = 0; i < kMaxNumSurfaceAttributes; ++i) {
-        if (attribs[i].type != VASurfaceAttribNone) {
-            *num_attribs = 0;
-            return VA_STATUS_ERROR_ATTR_NOT_SUPPORTED;
-        }
-    }
+
+    // In FFmpeg it might not be zero,so we skip this check.
+    /* for (size_t i = 0; i < kMaxNumSurfaceAttributes; ++i) {
+            if (attribs[i].type != VASurfaceAttribNone) {
+                *num_attribs = 0;
+                std::fstream("log.txt", std::ios::out | std::ios::app)
+                    << "vsQuerySurfaceAttributes: attribs[i].type" << attribs[i].type << std::endl;
+                return VA_STATUS_ERROR_ATTR_NOT_SUPPORTED;
+            }
+        } */
 
     int i = 0;
     attribs[i].type = VASurfaceAttribPixelFormat;
@@ -642,13 +647,13 @@ VAStatus vsQuerySurfaceAttributes(
     attribs[i].type = VASurfaceAttribMaxWidth;
     attribs[i].value.type = VAGenericValueTypeInteger;
     attribs[i].flags = VA_SURFACE_ATTRIB_GETTABLE;
-    attribs[i].value.value.i = 1024;
+    attribs[i].value.value.i = 4096;
     i++;
 
     attribs[i].type = VASurfaceAttribMaxHeight;
     attribs[i].value.type = VAGenericValueTypeInteger;
     attribs[i].flags = VA_SURFACE_ATTRIB_GETTABLE;
-    attribs[i].value.value.i = 1024;
+    attribs[i].value.value.i = 4096;
     i++;
 
     *num_attribs = i;
@@ -682,6 +687,8 @@ VAStatus vsCreateSurfaces2(VADriverContextP ctx, unsigned int format, unsigned i
 
 extern "C" VAStatus DLL_EXPORT __vaDriverInit_1_0(VADriverContextP ctx)
 {
+    std::fstream("log.txt", std::ios::out) << "Init" << std::endl;
+
     struct VADriverVTable *const vtable = ctx->vtable;
 
     ctx->version_major = VA_MAJOR_VERSION;

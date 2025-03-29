@@ -24,17 +24,17 @@ class VSConfig;
 // synchronized externally: BeginPicture(), RenderPicture(), and EndPicture().
 // The other methods are thread-safe and may be called concurrently with any of
 // those three methods.
-class FakeContext
+class VSContext
 {
 public:
     using IdType = VAContextID;
 
-    // Note: |config| must outlive the FakeContext.
-    FakeContext(IdType id, const VSConfig &config, int picture_width, int picture_height, int flag,
+    // Note: |config| must outlive the VSContext.
+    VSContext(IdType id, const VSConfig &config, int picture_width, int picture_height, int flag,
         std::vector<VASurfaceID> render_targets);
-    FakeContext(const FakeContext &) = delete;
-    FakeContext &operator=(const FakeContext &) = delete;
-    ~FakeContext();
+    VSContext(const VSContext &) = delete;
+    VSContext &operator=(const VSContext &) = delete;
+    ~VSContext();
 
     IdType GetID() const;
     const VSConfig &GetConfig() const;

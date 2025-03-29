@@ -9,6 +9,7 @@
 #include "config.h"
 #include "h264_decoder_delegate.h"
 #include "no_op_context_delegate.h"
+#include <fstream>
 #include <va/va.h>
 
 namespace
@@ -42,7 +43,7 @@ std::unique_ptr<libvavc8000d::ContextDelegate> CreateDelegate(
 namespace libvavc8000d
 {
 
-FakeContext::FakeContext(FakeContext::IdType id, const VSConfig &config, int picture_width,
+VSContext::VSContext(VSContext::IdType id, const VSConfig &config, int picture_width,
     int picture_height, int flag, std::vector<VASurfaceID> render_targets)
     : id_(id)
     , config_(config)
@@ -52,33 +53,33 @@ FakeContext::FakeContext(FakeContext::IdType id, const VSConfig &config, int pic
     , render_targets_(std::move(render_targets))
     , delegate_(CreateDelegate(config_, picture_width_, picture_height_))
 {}
-FakeContext::~FakeContext() = default;
+VSContext::~VSContext() = default;
 
-FakeContext::IdType FakeContext::GetID() const { return id_; }
+VSContext::IdType VSContext::GetID() const { return id_; }
 
-const VSConfig &FakeContext::GetConfig() const { return config_; }
+const VSConfig &VSContext::GetConfig() const { return config_; }
 
-int FakeContext::GetPictureWidth() const { return picture_width_; }
+int VSContext::GetPictureWidth() const { return picture_width_; }
 
-int FakeContext::GetPictureHeight() const { return picture_height_; }
+int VSContext::GetPictureHeight() const { return picture_height_; }
 
-int FakeContext::GetFlag() const { return flag_; }
+int VSContext::GetFlag() const { return flag_; }
 
-const std::vector<VASurfaceID> &FakeContext::GetRenderTargets() const { return render_targets_; }
+const std::vector<VASurfaceID> &VSContext::GetRenderTargets() const { return render_targets_; }
 
-void FakeContext::BeginPicture(const VSSurface &surface) const
+void VSContext::BeginPicture(const VSSurface &surface) const
 {
     CHECK(delegate_);
     delegate_->SetRenderTarget(surface);
 }
 
-void FakeContext::RenderPicture(const std::vector<const VSBuffer *> &buffers) const
+void VSContext::RenderPicture(const std::vector<const VSBuffer *> &buffers) const
 {
     CHECK(delegate_);
     delegate_->EnqueueWork(buffers);
 }
 
-void FakeContext::EndPicture() const
+void VSContext::EndPicture() const
 {
     CHECK(delegate_);
     delegate_->Run();
