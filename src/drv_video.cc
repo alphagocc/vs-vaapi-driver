@@ -687,13 +687,13 @@ VAStatus vsCreateSurfaces2(VADriverContextP ctx, unsigned int format, unsigned i
 
 extern "C" VAStatus DLL_EXPORT __vaDriverInit_1_0(VADriverContextP ctx)
 {
-    std::fstream("log.txt", std::ios::out) << "Init" << std::endl;
+    std::cerr << "VAAPI Init" << std::endl;
 
     struct VADriverVTable *const vtable = ctx->vtable;
 
     ctx->version_major = VA_MAJOR_VERSION;
     ctx->version_minor = VA_MINOR_VERSION;
-    ctx->str_vendor = "Chromium fake libva driver";
+    ctx->str_vendor = "Verisilicon libva driver";
     CHECK(ctx->drm_state);
 
     ctx->pDriverData = new libvavc8000d::VSDriver((static_cast<drm_state *>(ctx->drm_state))->fd);

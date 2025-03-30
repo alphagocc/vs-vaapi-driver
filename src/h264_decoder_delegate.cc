@@ -32,6 +32,7 @@ namespace
         kProfileIDCBaseline = 66,
         kProfileIDCConstrainedBaseline = kProfileIDCBaseline,
         kProfileIDCMain = 77,
+        kProfileIDCHigh = 100,
     };
 
     enum H264LevelIDC : uint8_t {
@@ -92,6 +93,16 @@ namespace
 
         int nal_ref_idc = 0;
         int nal_unit_type = 0;
+    };
+
+    struct VAH264SPS
+    {
+        u8 profile_idc;
+        bool constraint_set3_flag;
+        u8 level_idc;
+        bool vui_parameters_present_flag;
+        bool bitstream_restriction_flag;
+        u32 num_reorder_frames;
     };
 
     // H264BitstreamBuilder is mostly a copy&paste from Chromium's
@@ -324,15 +335,23 @@ namespace
     };
 
     void BuildPackedH264SPS(const VAPictureParameterBufferH264 *pic_param_buffer,
-        const VAProfile profile, H264BitstreamBuilder &bitstream_builder)
+        std::vector<const VSBuffer *> slice_param_buffers, const VAProfile profile,
+        H264BitstreamBuilder &bitstream_builder)
     {
+
+        const VASliceParameterBufferH264 *sliceParam
+            = reinterpret_cast<VASliceParameterBufferH264 *>(slice_param_buffers[0]->GetData());
+
+        // const VAH264SPS *sps = reinterpret_cast<const VAH264SPS *>(&(sliceParam->RefPicList0));
+
         // Build NAL header following spec section 7.3.1.
         bitstream_builder.BeginNALU(H264NALU::kSPS, 3);
-
+        int profile_idc = 0;
         // Build SPS following spec section 7.3.2.1.
         switch (profile) {
         case VAProfileH264Baseline:
         case VAProfileH264ConstrainedBaseline:
+            profile_idc = kProfileIDCBaseline;
             bitstream_builder.AppendBits(8,
                 kProfileIDCBaseline); // profile_idc u(8).
             bitstream_builder.AppendBool(0); // Constraint Set0 Flag u(1).
@@ -342,9 +361,10 @@ namespace
             bitstream_builder.AppendBool(0); // Constraint Set4 Flag u(1).
             bitstream_builder.AppendBool(0); // Constraint Set5 Flag u(1).
             bitstream_builder.AppendBits(2, 0); // Reserved zero 2bits u(2).
-            bitstream_builder.AppendBits(8, kLevelIDC1p0); // level_idc u(8).
+            bitstream_builder.AppendBits(8, kLevelIDC5p1); // level_idc u(8).
             break;
         case VAProfileH264Main:
+            profile_idc = kProfileIDCMain;
             bitstream_builder.AppendBits(8, kProfileIDCMain);
             bitstream_builder.AppendBool(0); // Constraint Set0 Flag u(1).
             bitstream_builder.AppendBool(0); // Constraint Set1 Flag u(1).
@@ -352,8 +372,20 @@ namespace
             bitstream_builder.AppendBool(0); // Constraint Set3 Flag u(1).
             bitstream_builder.AppendBool(0); // Constraint Set4 Flag u(1).
             bitstream_builder.AppendBool(0); // Constraint Set5 Flag u(1).
-            bitstream_builder.AppendBits(2, 0); // Reserved zero 5bits u(2).
-            bitstream_builder.AppendBits(8, kLevelIDC1p3); // level_idc u(8).
+            bitstream_builder.AppendBits(2, 0); // Reserved zero 2bits u(2).
+            bitstream_builder.AppendBits(8, kLevelIDC5p1); // level_idc u(8).
+            break;
+        case VAProfileH264High:
+            profile_idc = kProfileIDCHigh;
+            bitstream_builder.AppendBits(8, kProfileIDCHigh);
+            bitstream_builder.AppendBool(0); // Constraint Set0 Flag u(1).
+            bitstream_builder.AppendBool(0); // Constraint Set1 Flag u(1).
+            bitstream_builder.AppendBool(0); // Constraint Set2 Flag u(1).
+            bitstream_builder.AppendBool(0); // Constraint Set3 Flag u(1).
+            bitstream_builder.AppendBool(0); // Constraint Set4 Flag u(1).
+            bitstream_builder.AppendBool(0); // Constraint Set5 Flag u(1).
+            bitstream_builder.AppendBits(2, 0); // Reserved zero 2bits u(2).
+            bitstream_builder.AppendBits(8, kLevelIDC5p1); // level_idc u(8).
             break;
         // TODO(b/328430784): Support additional H264 profiles.
         default: CHECK(false); break;
@@ -362,7 +394,36 @@ namespace
         // TODO(b/328430784): find a way to get the seq_parameter_set_id.
         bitstream_builder.AppendUE(0); // seq_parameter_set_id ue(v).
 
-        bitstream_builder.AppendUE(pic_param_buffer->seq_fields.bits
+        if (profile_idc == 100 || profile_idc == 110 || profile_idc == 122 || profile_idc == 244
+            || profile_idc == 44 || profile_idc == 83 || profile_idc == 86 || profile_idc == 118
+            || profile_idc == 128 || profile_idc == 138 || profile_idc == 139 || profile_idc == 134
+            || profile_idc == 135) {
+            bitstream_builder.AppendUE(
+                pic_param_buffer->seq_fields.bits.chroma_format_idc); // chroma_format_idc ue(v).
+            if (pic_param_buffer->seq_fields.bits.chroma_format_idc == 3) {
+                bitstream_builder.AppendBool(0); // separate_colour_plane_flag u(1).
+            }
+            bitstream_builder.AppendUE(
+                pic_param_buffer->bit_depth_chroma_minus8); // bit_depth_luma_minus8 ue(v).
+            bitstream_builder.AppendUE(
+                pic_param_buffer->bit_depth_luma_minus8); // bit_depth_chroma_minus8 ue(v).
+            bitstream_builder.AppendBool(0); // qpprime_y_zero_transform_bypass_flag u(1).
+            bitstream_builder.AppendBool(0); // seq_scaling_matrix_present_flag u(1).
+            if (0) {
+                for (int i = 0;
+                     i < ((pic_param_buffer->seq_fields.bits.chroma_format_idc == 3) ? 12 : 8);
+                     i++) {
+                    bitstream_builder.AppendBool(0); // seq_scaling_list_present_flag u(1).
+                    if (0) {
+                        // TODO: Implement scaling list.
+                        // H264 7.3.2.1.1.1 Scaling list syntax
+                    }
+                }
+            }
+        }
+
+        bitstream_builder.AppendUE(
+            pic_param_buffer->seq_fields.bits
                 .log2_max_frame_num_minus4); // log2_max_frame_num_minus4 ue(v).
         bitstream_builder.AppendUE(
             pic_param_buffer->seq_fields.bits.pic_order_cnt_type); // pic_order_cnt_type ue(v).
@@ -389,17 +450,50 @@ namespace
         bitstream_builder.AppendBool(
             pic_param_buffer->seq_fields.bits.frame_mbs_only_flag); // frame_mbs_only_flag u(1).
         if (!pic_param_buffer->seq_fields.bits.frame_mbs_only_flag) {
-            bitstream_builder.AppendBool(pic_param_buffer->seq_fields.bits
+            bitstream_builder.AppendBool(
+                pic_param_buffer->seq_fields.bits
                     .mb_adaptive_frame_field_flag); // mb_adaptive_frame_field_flag
                                                     // u(1).
         }
 
-        bitstream_builder.AppendBool(pic_param_buffer->seq_fields.bits
+        bitstream_builder.AppendBool(
+            pic_param_buffer->seq_fields.bits
                 .direct_8x8_inference_flag); // direct_8x8_inference_flag u(1).
 
         // TODO(b/328430784): find a way to get these values.
         bitstream_builder.AppendBool(0); // frame_cropping_flag u(1).
-        bitstream_builder.AppendBool(0); // vui_parameters_present_flag u(1).
+        bitstream_builder.AppendBool(1); // vui_parameters_present_flag u(1).
+        if (1) {
+            // Annex E.1: VUI parameters syntax
+            bitstream_builder.AppendBool(1); // aspect_ratio_info_present_flag u(1).
+            if (1) {
+                bitstream_builder.AppendBits(8, 1); // aspect_ratio_idc u(8).
+                if (1 == 255) {
+                    bitstream_builder.AppendBits(16, 0); // sar_width u(16).
+                    bitstream_builder.AppendBits(16, 0); // sar_height u(16).
+                }
+            }
+            bitstream_builder.AppendBool(0); // overscan_info_present_flag u(1).
+            bitstream_builder.AppendBool(0); // video_signal_type_present_flag u(1).
+            bitstream_builder.AppendBool(0); // chroma_loc_info_present_flag u(1).
+            bitstream_builder.AppendBool(0); // timing_info_present_flag u(1).
+            bitstream_builder.AppendBool(0); // nal_hrd_parameters_present_flag u(1).
+            bitstream_builder.AppendBool(0); // vcl_hrd_parameters_present_flag u(1).
+            if (bool(0) || bool(0)) {
+                bitstream_builder.AppendBool(0); // low_delay_hrd_flag u(1).
+            }
+            bitstream_builder.AppendBool(0); // pic_struct_present_flag u(1).
+            bitstream_builder.AppendBool(0); // bitstream_restriction_flag u(1).
+            if (0) {
+                bitstream_builder.AppendBool(0); // motion_vectors_over_pic_boundaries_flag u(1).
+                bitstream_builder.AppendUE(0); // max_bytes_per_pic_denom ue(v).
+                bitstream_builder.AppendUE(0); // max_bits_per_mb_denom ue(v).
+                bitstream_builder.AppendUE(0); // log2_max_mv_length_horizontal ue(v).
+                bitstream_builder.AppendUE(0); // log2_max_mv_length_vertical ue(v).
+                bitstream_builder.AppendUE(0); // num_reorder_frames ue(v).
+                bitstream_builder.AppendUE(0); // max_dec_frame_buffering ue(v).
+            }
+        }
 
         bitstream_builder.FinishNALU();
     }
@@ -417,16 +511,17 @@ namespace
         bitstream_builder.AppendUE(0); // pic_parameter_set_id ue(v).
         bitstream_builder.AppendUE(0); // seq_parameter_set_id ue(v).
 
-        bitstream_builder.AppendBool(pic_param_buffer->pic_fields.bits
+        bitstream_builder.AppendBool(
+            pic_param_buffer->pic_fields.bits
                 .entropy_coding_mode_flag); // entropy_coding_mode_flag u(1).
         bitstream_builder.AppendBool(pic_param_buffer->pic_fields.bits
-                .pic_order_present_flag); // pic_order_present_flag u(1).
+                                         .pic_order_present_flag); // pic_order_present_flag u(1).
 
         // TODO(b/328430784): find a way to get this value.
         bitstream_builder.AppendUE(0); // num_slice_groups_minus1 ue(v).
 
         CHECK(!slice_param_buffers.empty());
-        const VASliceParameterBufferH264 *first_sp
+        const VASliceParameterBufferH264 *sliceParam
             = reinterpret_cast<VASliceParameterBufferH264 *>(slice_param_buffers[0]->GetData());
 
         // TODO(b/328430784): we don't have access to the
@@ -435,8 +530,8 @@ namespace
         // the num_ref_idx_l0_active_minus1 and num_ref_idx_l1_active_minus1 from the
         // first slice. This may be good enough for now but will probably not work in
         // general. Figure out what to do.
-        bitstream_builder.AppendUE(first_sp->num_ref_idx_l0_active_minus1);
-        bitstream_builder.AppendUE(first_sp->num_ref_idx_l1_active_minus1);
+        bitstream_builder.AppendUE(4); // num_ref_idx_l0_default_active_minus1 ue(v).
+        bitstream_builder.AppendUE(0); // num_ref_idx_l1_default_active_minus1 ue(v).
 
         bitstream_builder.AppendBool(
             pic_param_buffer->pic_fields.bits.weighted_pred_flag); // weighted_pred_flag u(1).
@@ -452,9 +547,11 @@ namespace
         // deblocking_filter_control_present_flag u(1).
         bitstream_builder.AppendBool(
             pic_param_buffer->pic_fields.bits.deblocking_filter_control_present_flag);
-        bitstream_builder.AppendBool(pic_param_buffer->pic_fields.bits
+        bitstream_builder.AppendBool(
+            pic_param_buffer->pic_fields.bits
                 .constrained_intra_pred_flag); // constrained_intra_pred_flag u(1).
-        bitstream_builder.AppendBool(pic_param_buffer->pic_fields.bits
+        bitstream_builder.AppendBool(
+            pic_param_buffer->pic_fields.bits
                 .redundant_pic_cnt_present_flag); // redundant_pic_cnt_present_flag
                                                   // u(1).
 
@@ -527,8 +624,12 @@ void H264DecoderDelegate::Run()
     const VAPictureParameterBufferH264 *pic_param_buffer
         = reinterpret_cast<VAPictureParameterBufferH264 *>(pic_param_buffer_->GetData());
 
-    BuildPackedH264SPS(pic_param_buffer, profile_, bitstream_builder);
-    BuildPackedH264PPS(pic_param_buffer, slice_param_buffers_, profile_, bitstream_builder);
+    if (reinterpret_cast<VASliceParameterBufferH264 *>(slice_param_buffers_[0]->GetData())
+            ->slice_type
+        == 2 /*SPS PPS is only before I frame*/) {
+        BuildPackedH264SPS(pic_param_buffer, slice_param_buffers_, profile_, bitstream_builder);
+        BuildPackedH264PPS(pic_param_buffer, slice_param_buffers_, profile_, bitstream_builder);
+    }
 
     {
         std::ofstream bitstream_file("bitstream0.h264", std::ios::binary | std::ios::trunc);
@@ -554,7 +655,7 @@ void H264DecoderDelegate::Run()
 
     // Dump bitstream to file for debugging.
     {
-        std::ofstream bitstream_file("bitstream.h264", std::ios::binary | std::ios::trunc);
+        std::ofstream bitstream_file("bitstream.h264", std::ios::binary | std::ios::app);
         if (bitstream_file.is_open()) {
             bitstream_file.write(reinterpret_cast<const char *>(bitstream_builder.data()),
                 bitstream_builder.BytesInBuffer());
@@ -570,7 +671,7 @@ void H264DecoderDelegate::Run()
 
     DWLLinearMem stream_mem;
     memset(&stream_mem, 0, sizeof(stream_mem));
-    stream_mem.mem_type = DWL_MEM_TYPE_CPU;
+    stream_mem.mem_type = DWL_MEM_TYPE_SLICE;
     DWLMallocLinear(dwl_instance_->instance, bitstream_builder.BytesInBuffer() * 2, &stream_mem);
     input.stream = reinterpret_cast<uint8_t *>(stream_mem.virtual_address);
     input.stream_bus_address = stream_mem.bus_address;
@@ -603,7 +704,8 @@ void H264DecoderDelegate::Run()
             H264DecPicture picture;
             for (;;) {
                 auto ret = H264DecNextPicture(hw_decoder_, &picture, 0);
-                if (ret == DEC_PIC_RDY) {
+                std::cerr << "HW Decoder Next Picture Return: " << ret << std::endl;
+                if (ret == DEC_PIC_RDY || ret == DEC_FLUSHED) {
                     OnFrameReady(picture);
                     H264DecPictureConsumed(hw_decoder_, &picture);
                 } else
@@ -619,6 +721,23 @@ void H264DecoderDelegate::Run()
         case DEC_OK:
             /* nothing to do, just call again */
             break;
+        case DEC_WAITING_FOR_BUFFER: {
+            DWLLinearMem mem;
+            H264DecBufferInfo buffer_info;
+            H264DecGetBufferInfo(hw_decoder_, &buffer_info);
+            std::cerr << "HW Decoder Buffer Info:\n"
+                      << "\t Buf to free:" << std::hex << buffer_info.buf_to_free.virtual_address
+                      << "\n"
+                      << "\t Next buf size:" << std::dec << buffer_info.next_buf_size
+                      << "\n\t Buf num:" << std::dec << buffer_info.buf_num << std::endl;
+
+            for (int i = 0; i < buffer_info.buf_num; i++) {
+                mem.mem_type = DWL_MEM_TYPE_DPB;
+                DWLMallocLinear(dwl_instance_->instance, buffer_info.next_buf_size, &mem);
+                H264DecAddBuffer(hw_decoder_, &mem);
+            }
+            break;
+        }
         default: {
             std::cerr << "HW Decoder Error: " << ret << std::endl;
             fail = true;
@@ -633,7 +752,7 @@ void H264DecoderDelegate::Run()
     } while (!ok && !fail);
 
     std::cerr << "HW Decoder Stopped" << std::endl;
-
+    if (fail) { H264DecAbort(hw_decoder_); }
     DWLFreeLinear(dwl_instance_->instance, &stream_mem);
     slice_data_buffers_.clear();
     slice_param_buffers_.clear();
@@ -642,14 +761,15 @@ void H264DecoderDelegate::Run()
 void H264DecoderDelegate::OnFrameReady(H264DecPicture picture)
 {
     const uint32_t ts = picture.pic_id;
-    auto render_target_it = ts_to_render_target_.Peek(ts);
-    CHECK(render_target_it != ts_to_render_target_.end());
-    const VSSurface *render_target = render_target_it->second;
-    CHECK(render_target);
+    std::cerr << "Picture Id: " << ts << std::endl;
+    // auto render_target_it = ts_to_render_target_.Peek(ts);
+    // CHECK(render_target_it != ts_to_render_target_.end());
+    // const VSSurface *render_target = render_target_it->second;
+    // CHECK(render_target);
 
-    const ScopedBOMapping &bo_mapping = render_target->GetMappedBO();
-    CHECK(bo_mapping.IsValid());
-    const ScopedBOMapping::ScopedAccess mapped_bo = bo_mapping.BeginAccess();
+    // const ScopedBOMapping &bo_mapping = render_target->GetMappedBO();
+    // CHECK(bo_mapping.IsValid());
+    // const ScopedBOMapping::ScopedAccess mapped_bo = bo_mapping.BeginAccess();
     for (int i = 0; i < DEC_MAX_OUT_COUNT; i++) {
         if (picture.pictures[i].pic_width == 0 || picture.pictures[i].pic_height == 0) continue;
         std::cerr << "Picture " << i << ": width=" << picture.pictures[i].pic_width
@@ -660,3 +780,5 @@ void H264DecoderDelegate::OnFrameReady(H264DecPicture picture)
 }
 
 } // namespace libvavc8000d
+
+void H264DecTrace(const char *string) { std::cerr << "[TRACE]" << string << std::endl; }
